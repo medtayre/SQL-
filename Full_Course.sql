@@ -6919,6 +6919,1200 @@ GO
 
 --                                          12-1-6-2    BRONZE LAYER: CREATE DDL FOR TABLES 
 
+/*
+               +    Remember : DDL -->   Data Definition Language defines the structure of database tables
+               
+               +------------------+
+               |  DATA PROFILING  |
+               +------------------+---------------------------------------------+
+               |    Explore the data to identify column names and data types    | 
+               +----------------------------------------------------------------+
+
+                        +   First table : 
+                                -   Name : cust_info
+                                -   columns: 
+                                        .   cst_id --> INT 
+                                        .   cst_key,cst_firstname,cst_lastname,cst_marital_status,cst_gndr -->  VARCHAR
+                                        .   cst_create_date --> DATE
 
 
- --  Source:https://www.youtube.com/watch?v=SSKVgrwhzus&t=86935                                    
+               +    Source of tbles system crm: C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_crm
+
+
+
+--               +    Create Table: #1 file cust_info                                                                                      */
+IF OBJECT_ID('bronze.crm_cust_info', 'U') IS NOT NULL 
+    DROP TABLE bronze.crm_cust_info;
+GO
+
+CREATE TABLE bronze.crm_cust_info (
+    cst_id                  INT ,
+    cst_key                 NVARCHAR(50),
+    cst_firstname           NVARCHAR(50),
+    cst_lastname            NVARCHAR(50),
+    cst_material_status     NVARCHAR(50),
+    cst_gndr                NVARCHAR(50),
+    cst_create_date         DATE
+)   
+
+--               +    Create Table: #2 file prd_info 
+
+IF OBJECT_ID('bronze.crm_prd_info', 'U') IS NOT NULL 
+    DROP TABLE bronze.crm_prd_info;
+CREATE TABLE bronze.crm_prd_info(
+    prd_id          INT,
+    prd_key         NVARCHAR(50),
+    prd_nm          NVARCHAR(50),
+    prd_cost        INT,
+    prd_line        NVARCHAR(50),
+    prd_start_dt    DATETIME,
+    prd_end_dt      DATETIME          
+    
+)
+
+--               +    Create Table: #3 file sales_details    
+
+IF OBJECT_ID('bronze.crm_sales_details', 'U') IS NOT NULL 
+    DROP TABLE bronze.crm_sales_details;
+CREATE TABLE bronze.crm_sales_details(
+   sls_ord_num      NVARCHAR(50),
+   sls_prd_key      NVARCHAR(50),
+   sls_cust_id      INT,
+   sls_order_dt     INT,
+   sls_ship_dt      INT,
+   sls_due_dt       INT,
+   sls_sales        INT,
+   sls_quantity     INT,
+   sls_price        INT
+    
+)
+
+     --          +    Source of tbles system erp :  C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_erp
+
+--               +    Create Table: #4 file CUST_AZ12   
+
+IF OBJECT_ID('bronze.erp_cust_az12', 'U') IS NOT NULL 
+    DROP TABLE bronze.erp_cust_az12;
+CREATE TABLE bronze.erp_cust_az12(
+   cid      NVARCHAR(50),
+   bdate    DATE,
+   gen      NVARCHAR(50)
+)
+
+--               +    Create Table: #5 file LOC_A101   
+
+IF OBJECT_ID('bronze.erp_loc_a101', 'U') IS NOT NULL 
+    DROP TABLE bronze.erp_loc_a101;
+CREATE TABLE bronze.erp_loc_a101(
+   cid      NVARCHAR(50),
+   cntry    NVARCHAR(50)
+)
+
+--               +    Create Table: #6 file PX_CAT_G1V2  
+
+IF OBJECT_ID('bronze.erp_px_cat_g1v2', 'U') IS NOT NULL 
+    DROP TABLE bronze.erp_px_cat_g1v2;
+CREATE TABLE bronze.erp_px_cat_g1v2(
+   id           NVARCHAR(50),
+   cat          NVARCHAR(50),
+   subcat       NVARCHAR(50) ,
+   maintenance  NVARCHAR(50)
+);
+GO
+
+--                                          12-1-6-3    BRONZE LAYER: DEVELOP SQL LOAD SCRIPTS
+/*
+            -   The methode we gonna use in order to load data for fils csv (source)  to our Datawarehous is:   
+                                            BULK INSERT
+
+                            File        ---------------- BLUK INSERT ----------------> Database  
+                          txt, Csv                         all Data                      table
+
+
+                          
+                            File        ---------------- INSERT ----------------> Database  
+                          txt, Csv                      row by row                table row                                                 */
+
+-- Create Stored Procedure 
+CREATE OR ALTER PROCEDURE bronze.load_bronze AS
+BEGIN
+    
+    DECLARE @start_time DATETIME, @end_time DATETIME, @whole_batch_start_time DATETIME, @whole_batch_end_time DateTime ;
+    BEGIN TRY 
+        Set @whole_batch_start_time = GETDATE();
+        PRINT '======================================================';
+        PRINT 'Loading Bronze Layer';
+        PRINT '======================================================';
+        PRINT '------------------------------------------------------';
+        PRINT 'Loading CRM Tables';
+        PRINT '------------------------------------------------------';
+        
+        SET @start_time = GETDATE();
+         -- Load Data table #1: 
+        PRINT   '>> Truncating Table bronze.crm_cust_info';
+        TRUNCATE TABLE bronze.crm_cust_info
+
+        PRINT   '>> Inserting Data Into: bronze.crm_cust_info';
+        BULK INSERT bronze.crm_cust_info
+        FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_crm\cust_info.csv'
+        WITH (
+            FIRSTROW = 2,
+            FIELDTERMINATOR = ',',  --  +-------------------+                       +---------------+
+            TABLOCK                 --  |   File Delimiter  |                       |   TRUNCATE    |
+        );                          --  +-------------------+-------------+         +---------------+-----------------------------------+
+                                    --  |           , ; | # "             |         |  Quickly delete all rows from a table, resetting  |
+                                    --  +---------------------------------+         |               it to an empty state                |
+                                    --                                              +---------------------------------------------------+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading  Table 1 is  ' + CAST (DATEDIFF(second,@end_time ,@start_time) AS NVARCHAR) + ' second'
+        PRINT '>> ---------------------------------------------------------------'
+        /*
+                +----------------+
+                |  QUALITY CHECK |
+                +----------------+------------------------------------------------------+
+                |   Check that the data hase not shifted and is the correct columns     |
+                +-----------------------------------------------------------------------+
+        */
+     
+        -- Load Data table #2: 
+        SET @start_time = GETDATE();
+        PRINT   '>> Truncating Table bronze.crm_prd_info';
+        TRUNCATE TABLE bronze.crm_prd_info
+
+        PRINT   '>> Inserting Data Into: bronze.crm_prd_info';
+        BULK INSERT bronze.crm_prd_info
+        FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_crm\prd_info.csv'
+        WITH (
+            FIRSTROW = 2,
+            FIELDTERMINATOR = ',',
+            TABLOCK
+        );
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading  data of table 2 is  ' + CAST (DATEDIFF(second,@end_time ,@start_time) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+        -- Load Data table #3: 
+        SET @start_time = GETDATE();
+        PRINT   '>> Truncating Table bronze.crm_sales_details';
+        TRUNCATE TABLE bronze.crm_sales_details
+
+        PRINT   '>> Inserting Data Into: bronze.crm_sales_details';
+        BULK INSERT bronze.crm_sales_details
+        FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_crm\sales_details.csv'
+        WITH (
+            FIRSTROW = 2,
+            FIELDTERMINATOR = ',',
+            TABLOCK
+        );
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading  Table 3 is  ' + CAST (DATEDIFF(second,@end_time ,@start_time) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+        PRINT '------------------------------------------------------';
+        PRINT 'Loading ERP Tables';
+        PRINT '------------------------------------------------------';
+
+        -- Load Data table #4: 
+        SET @start_time = GETDATE();
+        PRINT   '>> Truncating Table bronze.erp_cust_az12';
+        TRUNCATE TABLE bronze.erp_cust_az12
+
+        PRINT   '>> Inserting Data Into: bronze.erp_cust_az12';
+        BULK INSERT bronze.erp_cust_az12
+        FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_erp\CUST_AZ12.csv'
+        WITH (
+            FIRSTROW = 2,
+            FIELDTERMINATOR = ',',
+            TABLOCK
+        );
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading Table 4  is  ' + CAST (DATEDIFF(second,@end_time ,@start_time) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+        -- Load Data table #5: 
+        SET @start_time = GETDATE();
+        PRINT   '>> Truncating Table bronze.erp_loc_a101';
+        TRUNCATE TABLE bronze.erp_loc_a101
+
+        PRINT   '>> Inserting Data Into: bronze.erp_loc_a101';
+        BULK INSERT bronze.erp_loc_a101
+        FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_erp\loc_a101.csv'
+        WITH (
+            FIRSTROW = 2,
+            FIELDTERMINATOR = ',',
+            TABLOCK
+        );
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading Table 5 is  ' + CAST (DATEDIFF(second,@end_time ,@start_time) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+
+        -- Load Data table #6: 
+        SET @start_time = GETDATE();
+        PRINT   '>> Truncating Table bronze.erp_px_cat_g1v2';
+        TRUNCATE TABLE bronze.erp_px_cat_g1v2
+
+        PRINT   '>> Inserting Data Into: bronze.erp_px_cat_g1v2';
+        BULK INSERT bronze.erp_px_cat_g1v2
+        FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-warehouse-project\datasets\source_erp\px_cat_g1v2.csv'
+        WITH (
+            FIRSTROW = 2,
+            FIELDTERMINATOR = ',',
+            TABLOCK
+        );
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading table 6 is  ' + CAST (DATEDIFF(second,@end_time ,@start_time) AS NVARCHAR) + ' Seconds'
+        PRINT '=================================================='
+        PRINT 'Loading Bronze Layer is Completed'
+        SET @whole_batch_end_time = GETDATE();
+        PRINT '   - Total Load Duration:  ' + CAST (DATEDIFF(second,@whole_batch_end_time ,@whole_batch_Start_time) AS NVARCHAR) + ' Seconds'
+        PRINT '=================================================='
+    END TRY
+    BEGIN CATCH
+        PRINT '==========================================='
+        PRINT 'ERROR OCCURED DURING LOADING  BRONZE LAYER'
+        PRINT 'Error Message ' + ERROR_MESSAGE();
+        PRINT 'Error Message ' + CAST (ERROR_NUMBER() AS NVARCHAR);
+        PRINT '==========================================='
+    END CATCH
+END
+
+--                                          12-1-6-4    BRONZE LAYER: CREATE STORED PROCEDURE
+ /*                 +--------+
+                    |  HINT  |
+                    +--------+----------------------------------------------------------+
+                    |   Save frequently used SQL code in stored proceddures in database |
+                    +-------------------------------------------------------------------+  
+                    
+                    +--------------+
+                    |  ADD PRINTS  |
+                    +--------------+---------------------------------------------------------+
+                    |   Add prints to track execution, debug issues and understand its flow  |
+                    +------------------------------------------------------------------------+  
+
+                    +---------------------+
+                    |  ADD TRY ... CATCH  |
+                    +---------------------+-------------------------------------------------------------+
+                    |  Ensures error handling, data integrity, and issue logging for easier debugging   |
+                    |   SAL run the TRY block, and if fails, it runs the CATCH block to handle the erro |
+                    +-----------------------------------------------------------------------------------+ 
+                    
+                    +---------------------+
+                    |  Track ETL Duration |
+                    +---------------------+-----------------------------------------------------------------+
+                    |  Helps to identify bottlenecks, optimize performance, monitor trends, detecte issues  |
+                    +---------------------------------------------------------------------------------------+ 
+                    
+                   */
+                    
+--                                          12-1-6-5    BRONZE LAYER:DOCUMENT DATA FLOW      
+--          File Link: C:\Users\THINKPAD\Desktop\SQL\Bronze Layer Flow.drawio
+                    
+
+--                                    12-1-7    DATA WAREHOUSE PROJECTS: SILVER LAYER 
+--                                          12-1-7-1    SILVER LAYER: ANALYSING ( EXPLORE & UNEDRSTAND DATA ( DRAW.IO))
+
+SELECT TOP 1000 * FROM bronze.crm_cust_info
+SELECT TOP 1000 * FROM bronze.crm_prd_info
+SELECT TOP 1000 * FROM bronze.crm_sales_details
+
+SELECT TOP 1000 * FROM bronze.erp_cust_az12         --birthday
+SELECT TOP 1000 * FROM bronze.erp_loc_a101          --country
+SELECT TOP 1000 * FROM bronze.erp_px_cat_g1v2       -- Product Categories
+
+-- Patch for Diagram Draw.io ==> C:\Users\THINKPAD\Desktop\SQL\Diagramme_Integration_Model.drawio
+
+--                                          12-1-7-2    SILVER LAYER: CREATE DDL FOR TABLES
+/*
+        METADATA COLUMNS:
+
+            Extra column added by data engineers that do not originate from the source data.
+            -   Create_date: The record's load timestamp.
+            -   update_date: The record's last update timestamp.
+            -   source_system: The origin System of the record.
+            -   file_location: The file source of the record. 
+*/
+
+IF OBJECT_ID('silver.crm_cust_info', 'U') IS NOT NULL 
+    DROP TABLE silver.crm_cust_info;
+GO
+
+CREATE TABLE silver.crm_cust_info (
+    cst_id                  INT ,
+    cst_key                 NVARCHAR(50),
+    cst_firstname           NVARCHAR(50),
+    cst_lastname            NVARCHAR(50),
+    cst_material_status     NVARCHAR(50),
+    cst_gndr                NVARCHAR(50),
+    cst_create_date         DATE,
+    dwh_create_date         DATETIME2 DEFAULT GETDATE()          --  Metadata (Create date)
+)   
+
+--               +    Create Table: #2 file prd_info 
+
+IF OBJECT_ID('silver.crm_prd_info', 'U') IS NOT NULL 
+    DROP TABLE silver.crm_prd_info;
+CREATE TABLE silver.crm_prd_info(
+    prd_id          INT,
+    cat_id          NVARCHAR(50),
+    prd_key         NVARCHAR(50),
+    prd_nm          NVARCHAR(50),
+    prd_cost        INT,
+    prd_line        NVARCHAR(50),
+    prd_start_dt    DATE,
+    prd_end_dt      DATE,
+    dwh_create_date         DATETIME2 DEFAULT GETDATE()          --  Metadata (Create date)
+    
+)
+
+--               +    Create Table: #3 file sales_details    
+
+IF OBJECT_ID('silver.crm_sales_details', 'U') IS NOT NULL 
+    DROP TABLE silver.crm_sales_details;
+CREATE TABLE silver.crm_sales_details(
+   sls_ord_num      NVARCHAR(50),
+   sls_prd_key      NVARCHAR(50),
+   sls_cust_id      INT,
+   sls_order_dt     DATE,
+   sls_ship_dt      DATE,
+   sls_due_dt       DATE,
+   sls_sales        INT,
+   sls_quantity     INT,
+   sls_price        INT,
+    dwh_create_date         DATETIME2 DEFAULT GETDATE()          --  Metadata (Create date)
+
+)
+
+--               +    Create Table: #4 file CUST_AZ12   
+
+IF OBJECT_ID('silver.erp_cust_az12', 'U') IS NOT NULL 
+    DROP TABLE silver.erp_cust_az12;
+CREATE TABLE silver.erp_cust_az12(
+   cid                      NVARCHAR(50),
+   bdate                    DATE,
+   gen                      NVARCHAR(50),
+   dwh_create_date          DATETIME2 DEFAULT GETDATE()          --  Metadata (Create date)
+)
+
+--               +    Create Table: #5 file LOC_A101   
+
+IF OBJECT_ID('silver.erp_loc_a101', 'U') IS NOT NULL 
+    DROP TABLE silver.erp_loc_a101;
+CREATE TABLE silver.erp_loc_a101(
+   cid                      NVARCHAR(50),
+   cntry                    NVARCHAR(50),
+   dwh_create_date          DATETIME2 DEFAULT GETDATE()          --  Metadata (Create date)
+
+)
+
+--               +    Create Table: #6 file PX_CAT_G1V2  
+
+IF OBJECT_ID('silver.erp_px_cat_g1v2', 'U') IS NOT NULL 
+    DROP TABLE silver.erp_px_cat_g1v2;
+CREATE TABLE silver.erp_px_cat_g1v2(
+   id               NVARCHAR(50),
+   cat              NVARCHAR(50),
+   subcat           NVARCHAR(50) ,
+   maintenance      NVARCHAR(50),
+   dwh_create_date         DATETIME2 DEFAULT GETDATE()          --  Metadata (Create date)
+
+);
+GO
+
+
+--                                          12-1-7-3    BUILD SILVER LAYER: CLEAN & LOAD 
+--                                              12-1-7-3-1    CLEAN & LOAD: crm_cust_info
+
+/*
+        #1 Step:
+                -   Check For Nulls or Duplicates in Primary Key
+                -   Exception: No Result
+                >>> Quality Check: 
+                                    -   A Primary Key Must Be Unique And Not Null.
+                                    -   Check for unwanted spaces in string values.
+                                    -   Check the consistency of values in low cardinality columns 
+                                    
+
+*/
+
+
+/*===============================================
+                The Main Querie
+===============================================*/
+
+PRINT '>> Truncating Table: silver.crm_cust_info'
+TRUNCATE TABLE silver.crm_cust_info;
+PRINT '>> Inserting Data Into: silver.crm_cust_info'
+INSERT INTO silver.crm_cust_info (
+    cst_id,
+    cst_key,
+    cst_firstname,
+    cst_lastname,
+    cst_material_status,
+    cst_gndr,
+    cst_create_date )
+
+    SELECT
+        cst_id,
+        cst_key,
+        TRIM(cst_firstname) AS cst_firstname,
+        TRIM(cst_lastname) AS cst_lastname,
+    
+        CASE WHEN UPPER(cst_material_status) = 'S' THEN 'Single'
+             WHEN UPPER(cst_material_status) = 'M' THEN 'Married'
+             ELSE 'n/a'
+        END cst_material_status,
+        CASE WHEN UPPER(cst_gndr) = 'F' THEN 'Female'
+             WHEN UPPER(cst_gndr) = 'M' THEN 'Male'
+             ELSE 'n/a'
+        END cst_gndr,
+        cst_create_date 
+    FROM (
+        SELECT 
+            *,
+            ROW_NUMBER() OVER(PARTITION BY cst_id ORDER BY cst_create_date DESC) as flag_last
+        FROM bronze.crm_cust_info
+        WHERE cst_id IS NOT NULL 
+    )t  WHERE flag_last = 1        
+
+
+
+
+
+-- We have the Three Columns share the same cst_id so that's not accepte for solution we use 
+                                --          ROW_NUMBER () : Assign a unique number to each row in a result set, 
+                                --              based on a defined order
+                                
+
+-- Check for unwanted Sapces: 
+--  Expectation: No Results 
+SELECT cst_lastname 
+FROM bronze.crm_cust_info
+WHERE cst_lastname  != TRIM(cst_lastname)    --  If the Original value is not equal to the same value after trimming, 
+                                                --      it means there are spaces!
+-- Data Standarization & consistency 
+SELECT DISTINCT cst_gndr 
+FROM bronze.crm_cust_info       -- In our Data Warehouse, We aim to store clear and meaningful values 
+                                --  rather than using abbreviated terms 
+ 
+
+--  Quality of silver: Re-run the quality check queries from the bronze layer to verify 
+--              the quality of data in the silver Layer
+  --    Check for dublicate Primary Key 
+SELECT 
+    cst_id,
+    COUNT(*)
+FROM silver.crm_cust_info
+GROUP BY cst_id
+HAVING COUNT(*) > 1 OR cst_id IS NULL 
+
+-- Check For Unwanted Space 
+SELECT cst_lastname
+FROM silver.crm_cust_info
+WHERE cst_lastname != TRIM(cst_lastname)
+
+
+
+/*
+        SYNTAX: 
+
+            +--------------------------+
+            |  Remove Unwanted Spaces  |
+            +--------------------------+-------------------------------------------------------------------+
+            |   Removes unnecessary spaces to ensure data consistency, and uniformity across all records   |
+            +----------------------------------------------------------------------------------------------+
+
+            +----------------------------------------+
+            |  Data Normalization & Standardization  |
+            +----------------------------------------+------------------------+
+            |  Maps coded values to meaningful, unser-friendly descriptions   |
+            +-----------------------------------------------------------------+
+
+            +-------------------------+
+            | Handling Missing Data   |
+            +-------------------------+-------------------------+
+            |  Fills in the blanks by adding a default value    |
+            +---------------------------------------------------+
+
+            +---------------------+
+            |  Remove Dublicates  |
+            +---------------------+-------------------------------------------------------------------+
+            |   Ensure only one record per entity by identifying and retaining the most relevant row. |
+            +-----------------------------------------------------------------------------------------+
+
+            
+            
+
+
+*/
+
+--                                              12-1-7-3-2    CLEAN & LOAD: crm_prd_info
+
+/*===============================================
+                The Main Querie
+===============================================*/
+
+PRINT '>> Truncating Table: silver.crm_prd_info'
+TRUNCATE TABLE silver.crm_prd_info;
+PRINT '>> Inserting Data Into: silver.crm_prd_info'
+
+INSERT INTO silver.crm_prd_info(
+    prd_id,
+    cat_id,
+    prd_key,
+    prd_nm,
+    prd_cost,
+    prd_line,
+    prd_start_dt,
+    prd_end_dt
+)
+SELECT 
+    prd_id,
+    REPLACE(SUBSTRING (prd_key, 1, 5), '-','_') AS cat_id,      -- SUBSTRING: Extract a specific part of a string value 
+    SUBSTRING (prd_key, 7, LEN(prd_key)) AS  prd_key,           -- LEN(): Return the number of characters in a string.
+    prd_nm,
+    ISNULL(prd_cost, 0) AS prd_cost,                            -- ISNULL(): Replace NULL value with a specified replacement
+                                                                --              value we can also use COALESCE as well
+    CASE UPPER(TRIM(prd_line))
+         WHEN 'M' THEN 'Mountain'                               --  Quick Case WHEN :
+         WHEN 'R' THEN 'Road'                                   --                      Ideal for simple value mapping
+         WHEN 'S' THEN 'Other Sales' 
+         WHEN 'T' THEN 'Touring' 
+         ELSE 'n/a'
+    END AS prd_line,
+    CAST(prd_start_dt AS DATE) AS prd_start_dt,
+    CAST(LEAD( prd_start_dt) OVER(PARTITION BY prd_key ORDER BY prd_start_dt) - 1 AS DATE) AS prd_end_dt
+FROM bronze.crm_prd_info
+
+
+
+
+--  Check For Nulls or Duplicates in Primary key
+--  Excpectation: No Result
+
+SELECT 
+    prd_id,
+    count(*)
+FROM bronze.crm_prd_info
+GROUP BY prd_id
+HAVING COUNT(*) > 1 OR prd_id IS NULL
+
+-- Check for unwanted spaces 
+--  Excpectation: No Result
+SELECT prd_nm
+FROM bronze.crm_prd_info
+WHERE prd_nm != TRIM(prd_nm)
+
+-- Check for NULLs or Negative Numbers 
+--  Excpectation: No Result
+SELECT prd_cost
+FROM bronze.crm_prd_info
+WHERE prd_cost < 0 OR prd_cost IS NULL
+
+--  Data Standarization & Consistency
+SELECT DISTINCT prd_line
+FROM bronze.crm_prd_info
+
+-- Check for Invalid Date Orders
+SELECT * 
+FROM bronze.crm_prd_info
+WHERE prd_end_dt < prd_start_dt
+
+/*=====================================
+    Check for invalidate Date orders ||
+--===================================*/
+SELECT 
+    prd_id,
+    prd_key,
+    prd_nm,
+    prd_start_dt,
+    prd_end_dt,
+    LEAD( prd_start_dt) OVER(PARTITION BY prd_key ORDER BY prd_start_dt) - 1 AS prd_end_dt
+                --  LEAD(): Access values from the next row within a window 
+FROM bronze.crm_prd_info
+WHERE prd_key IN ('AC-HE-HL-U509-R','AC-HE-HL-U509')
+
+
+/*      SYNTAX: 
+
+                +-----------------+
+                | Derived Columns |
+                +-----------------+-----------------------------------------------------------------+
+                |   Create new columns based on calculationsor transformations of existing ones.    |
+                +-----------------------------------------------------------------------------------+
+
+                +------------------+
+                | Data Enrichement |
+                +------------------+----------------------------------------------+
+                |   Add new, relevant data to enhance the dataset for analysis    |
+                +-----------------------------------------------------------------+
+*/
+
+
+--                                              12-1-7-3-3    CLEAN & LOAD: crm_sales_details
+
+
+
+
+/*===============================================
+                The Main Querie
+===============================================*/
+
+PRINT '>> Truncating Table: silver.crm_sales_details'
+TRUNCATE TABLE silver.crm_sales_details;
+PRINT '>> Inserting Data Into: silver.crm_sales_details'
+
+INSERT INTO silver.crm_sales_details(
+    sls_ord_num,
+    sls_prd_key,
+    sls_cust_id,
+    sls_order_dt,
+    sls_ship_dt,
+    sls_due_dt,
+    sls_sales,
+    sls_quantity,
+    sls_price
+)
+SELECT 
+    sls_ord_num,
+    sls_prd_key,
+    sls_cust_id,
+
+    CASE WHEN sls_order_dt = 0  OR LEN(sls_order_dt) != 8 THEN NULL
+         ELSE CAST(CAST(sls_order_dt AS VARCHAR) AS DATE)   
+    END AS sls_order_dt,
+
+    CASE WHEN sls_ship_dt = 0  OR LEN(sls_ship_dt) != 8 THEN NULL
+         ELSE CAST(CAST(sls_ship_dt AS VARCHAR) AS DATE)   
+    END AS sls_ship_dt,
+
+    CASE WHEN sls_due_dt = 0  OR LEN(sls_due_dt) != 8 THEN NULL
+         ELSE CAST(CAST(sls_due_dt AS VARCHAR) AS DATE)   
+    END AS sls_due_dt,
+
+    CASE WHEN sls_sales IS NULL OR sls_sales <= 0 OR sls_sales !=ABS( sls_price) * sls_quantity 
+                THEN ABS(sls_price) * sls_quantity 
+        ELSE sls_sales
+    END AS sls_sales,
+    sls_quantity,
+    CASE WHEN sls_price <= 0 OR sls_price IS NULL 
+                    THEN sls_sales / NULLIF(ABS(sls_quantity), 0)
+            ELSE sls_price
+    END AS sls_price
+FROM bronze.crm_sales_details
+--==================================================================================================================
+
+
+-- Check for invalid Dates (sls_order_dt): Negative numbers or zeros can't be cast to a date  
+--  Check for outliers by validating the boundaries of the date range 
+SELECT *
+FROM bronze.crm_sales_details
+WHERE sls_order_dt < 0  
+      OR sls_order_dt = 0  
+      OR LEN(sls_order_dt) != 8 
+      OR sls_order_dt > 20500101
+      OR sls_order_dt <  19000101
+
+
+-- Check for  invalidate date (sls_ship_dt)
+SELECT *
+FROM bronze.crm_sales_details
+WHERE sls_ship_dt < 0  
+      OR sls_ship_dt = 0  
+      OR LEN(sls_ship_dt) != 8 
+      OR sls_ship_dt > 20500101
+      OR sls_ship_dt <  19000101
+
+
+-- Check for  invalidate date (sls_due_dt)
+SELECT *
+FROM bronze.crm_sales_details
+WHERE sls_due_dt < 0  
+      OR sls_due_dt = 0  
+      OR LEN(sls_due_dt) != 8 
+      OR sls_due_dt > 20500101
+      OR sls_due_dt <  19000101
+
+
+-- Check for invalid Date Orders
+-- Order Date must always be earlier than the shipping Date or   Date 
+    /*
+    The correct order:
+
+            |>--------------------------->|--------------------------->|
+       sls_order_dt                   Ship Date                     Due Date 
+     (customer place                (Company sends             (Customer recieves 
+          order )                      product)                 product OR deadline)    */
+
+SELECT 
+    *
+FROM bronze.crm_sales_details
+WHERE sls_order_dt > sls_ship_dt OR sls_order_dt > sls_due_dt or sls_ship_dt > sls_due_dt
+
+
+-- Check Data Consistency: Between Sales, Quantity, and Price.
+--  >> Sales = Quantity * Price 
+--  >> Value must not be Null, Zero, or Negative 
+/*
+             +------------------+
+             |  Business Rules  |
+             +------------------+------------------------+
+             |  Sales = Quantity * price                 |
+             |  Negative, Zero, Nulls, are NOT ALLOWED ! |
+             +-------------------------------------------+                                      */
+
+SELECT 
+    sls_ord_num,
+    sls_prd_key,
+    sls_quantity,
+    sls_price AS OLD_PRICE,
+    CASE WHEN sls_price <= 0 OR sls_price IS NULL 
+                    THEN sls_sales / NULLIF(ABS(sls_quantity), 0)
+            ELSE sls_price
+    END AS sls_price,
+    sls_sales AS old_sales,
+    CASE WHEN sls_sales IS NULL OR sls_sales <= 0 OR sls_sales !=ABS( sls_price) * sls_quantity 
+                THEN ABS(sls_price) * sls_quantity 
+        ELSE sls_sales
+    END AS sls_sales,
+    (sls_quantity * sls_price) AS check_sales
+FROM bronze.crm_sales_details
+WHERE sls_quantity * sls_price != sls_sales
+      OR sls_sales IS NULL  OR sls_price IS NULL OR sls_quantity IS NULL  
+      OR sls_sales <= 0  OR sls_price <= 0  OR sls_quantity <= 0
+
+/*                                                +---------+
+             +------------------------------------|  RULES  |------------------------------------+
+             |                                    +---------+                                    |
+             |      -   If Sales is negative, zero, or null, derive it using Quantity and Price  |
+             |      -   If price is Zero or null, calculate it using Sales and Quantity          |
+             |      -   If price is negative, convert it to a positive value                     |
+             +-----------------------------------------------------------------------------------+
+*/
+
+
+--                                              12-1-7-3-4    CLEAN & LOAD: erp_cust_az12
+
+/*==================================================================
+                             MAIN Querie
+--=================================================================*/
+
+PRINT '>> Truncating Table: silver.erp_cust_az12'
+TRUNCATE TABLE silver.erp_cust_az12;
+PRINT '>> Inserting Data Into: silver.erp_cust_az12'
+
+INSERT INTO silver.erp_cust_az12 (
+        cid,
+        bdate,
+        gen
+)
+SELECT
+    CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid,4, LEN(cid))
+         ELSE cid
+    END AS cid,
+    CASE WHEN  bdate > GETDATE() THEN NULL
+        ELSE bdate
+    END AS bdate,
+    CASE WHEN UPPER(TRIM(gen)) IN( 'F', 'FEMALE') THEN 'Female'
+         WHEN UPPER(TRIM(gen)) IN ( 'M' , 'MALE' ) THEN 'Male'
+         ELSE 'n/a'
+    END as gen
+    
+FROM bronze.erp_cust_az12
+
+--=====================================================================
+
+
+-- Identify Out-of-Range Dates
+SELECT DISTINCT 
+    bdate
+FROM bronze.erp_cust_az12
+WHERE bdate < '1924-01-01' OR bdate >  GETDATE()
+
+-- Data Standarization & Consistency:
+SELECT DISTINCT 
+        CASE WHEN UPPER(TRIM(gen)) IN( 'F', 'FEMALE') THEN 'Female'
+         WHEN UPPER(TRIM(gen)) IN ( 'M' , 'MALE' ) THEN 'Male'
+         ELSE 'n/a'
+    END as gen
+FROM bronze.erp_cust_az12
+
+
+--                                              12-1-7-3-5   CLEAN & LOAD: erp_loc_a101
+
+
+/*==================================================================
+                             MAIN Querie
+--=================================================================*/
+
+PRINT '>> Truncating Table: silver.erp_loc_a101'
+TRUNCATE TABLE silver.erp_loc_a101;
+PRINT '>> Inserting Data Into: silver.erp_loc_a101'
+INSERT INTO silver.erp_loc_a101 (
+    cid,
+    cntry
+)
+SELECT 
+    REPLACE(cid, '-','') AS cid,
+    CASE WHEN UPPER(TRIM(cntry)) IN ('USA','US') THEN 'United States'
+         WHEN UPPER(TRIM(cntry)) = 'DE' THEN 'Germany'
+         WHEN UPPER(TRIM(cntry)) = '' OR cntry IS NULL  THEN 'n/a'
+         ELSE TRIM(cntry)
+    END AS cntry
+FROM bronze.erp_loc_a101
+
+
+-- Data Standarization & Consistency
+SELECT  DISTINCT 
+    cntry AS old_cntry, 
+     CASE WHEN UPPER(TRIM(cntry)) IN ('USA','US') THEN 'United States'
+         WHEN UPPER(TRIM(cntry)) = 'DE' THEN 'Germany'
+         WHEN UPPER(TRIM(cntry)) = '' OR cntry IS NULL  THEN 'n/a'
+         ELSE TRIM(cntry)
+    END AS cntry
+FROM bronze.erp_loc_a101
+ORDER BY cntry
+
+
+
+--                                              12-1-7-3-6   CLEAN & LOAD: erp_px_cat_g1v2
+
+
+/*==================================================================
+                             MAIN Querie
+==================================================================*/
+PRINT '>> Truncating Table: silver.erp_px_cat_g1v2'
+TRUNCATE TABLE silver.erp_px_cat_g1v2;
+PRINT '>> Inserting Data Into: silver.erp_px_cat_g1v2'
+INSERT INTO silver.erp_px_cat_g1v2 (
+   id,
+   cat,
+   subcat,
+   maintenance
+)
+SELECT   
+   id,
+   cat,
+   subcat,
+   maintenance  
+FROM bronze.erp_px_cat_g1v2 
+
+
+-- Check unwanted spaces 
+SELECT subcat 
+FROM bronze.erp_px_cat_g1v2 
+WHERE cat != TRIM(cat)
+
+GO
+
+
+
+--                                          12-1-7-3    BUILD SILVER LAYER: CREATE STORED PROCEDURE 
+
+CREATE OR ALTER PROCEDURE silver.load_silver AS
+BEGIN
+
+    DECLARE @start_time DATETIME, @end_time DATETIME, @whole_batch_start_time DATETIME, @whole_batch_end_time DateTime ;
+    BEGIN TRY 
+
+        Set @whole_batch_start_time = GETDATE();
+        PRINT '======================================================';
+        PRINT 'Loading Silver Layer';
+        PRINT '======================================================';
+        PRINT '------------------------------------------------------';
+        PRINT 'Loading CRM Tables';
+        PRINT '------------------------------------------------------';
+        
+        SET @start_time = GETDATE();
+
+        -- CLEAN & LOAD: crm_cust_info
+        PRINT '>> Truncating Table: silver.crm_cust_info'
+        TRUNCATE TABLE silver.crm_cust_info;
+        PRINT '>> Inserting Data Into: silver.crm_cust_info'
+        INSERT INTO silver.crm_cust_info (
+            cst_id,
+            cst_key,
+            cst_firstname,
+            cst_lastname,
+            cst_material_status,
+            cst_gndr,
+            cst_create_date 
+         )
+
+        SELECT
+            cst_id,
+            cst_key,
+            TRIM(cst_firstname) AS cst_firstname,
+            TRIM(cst_lastname) AS cst_lastname,
+    
+            CASE WHEN UPPER(cst_material_status) = 'S' THEN 'Single'
+                    WHEN UPPER(cst_material_status) = 'M' THEN 'Married'
+                    ELSE 'n/a'
+            END cst_material_status,
+            CASE WHEN UPPER(cst_gndr) = 'F' THEN 'Female'
+                    WHEN UPPER(cst_gndr) = 'M' THEN 'Male'
+                    ELSE 'n/a'
+            END cst_gndr,
+            cst_create_date 
+        FROM (
+            SELECT 
+                *,
+                ROW_NUMBER() OVER(PARTITION BY cst_id ORDER BY cst_create_date DESC) as flag_last
+            FROM bronze.crm_cust_info
+            WHERE cst_id IS NOT NULL 
+        )t  WHERE flag_last = 1  
+        
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading  Table 1 is  ' + CAST (DATEDIFF(second,@start_time,@end_time ) AS NVARCHAR) + ' second'
+        PRINT '>> ---------------------------------------------------------------'
+    
+        -- CLEAN & LOAD: crm_prd_info
+        SET @start_time = GETDATE();
+        PRINT '>> Truncating Table: silver.crm_prd_info'
+        TRUNCATE TABLE silver.crm_prd_info;
+        PRINT '>> Inserting Data Into: silver.crm_prd_info'
+
+        INSERT INTO silver.crm_prd_info(
+            prd_id,
+            cat_id,
+            prd_key,
+            prd_nm,
+            prd_cost,
+            prd_line,
+            prd_start_dt,
+            prd_end_dt
+        )
+        SELECT 
+            prd_id,
+            REPLACE(SUBSTRING (prd_key, 1, 5), '-','_') AS cat_id,       
+            SUBSTRING (prd_key, 7, LEN(prd_key)) AS  prd_key,           
+            prd_nm,
+            ISNULL(prd_cost, 0) AS prd_cost,                            
+                                                               
+            CASE UPPER(TRIM(prd_line))
+                 WHEN 'M' THEN 'Mountain'                            
+                 WHEN 'R' THEN 'Road'                                   
+                 WHEN 'S' THEN 'Other Sales' 
+                 WHEN 'T' THEN 'Touring' 
+                 ELSE 'n/a'
+            END AS prd_line,
+            CAST(prd_start_dt AS DATE) AS prd_start_dt,
+            CAST(LEAD( prd_start_dt) OVER(PARTITION BY prd_key ORDER BY prd_start_dt) - 1 AS DATE) AS prd_end_dt
+        FROM bronze.crm_prd_info
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading  Table 2 is  ' + CAST (DATEDIFF(second,@start_time, @end_time ) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+        --CLEAN & LOAD: crm_sales_details
+        SET @start_time = GETDATE();
+        PRINT '>> Truncating Table: silver.crm_sales_details'
+        TRUNCATE TABLE silver.crm_sales_details;
+        PRINT '>> Inserting Data Into: silver.crm_sales_details'
+        INSERT INTO silver.crm_sales_details(
+            sls_ord_num,
+            sls_prd_key,
+            sls_cust_id,
+            sls_order_dt,
+            sls_ship_dt,
+            sls_due_dt,
+            sls_sales,
+            sls_quantity,
+            sls_price
+        )
+        SELECT 
+            sls_ord_num,
+            sls_prd_key,
+            sls_cust_id,
+
+            CASE WHEN sls_order_dt = 0  OR LEN(sls_order_dt) != 8 THEN NULL
+                 ELSE CAST(CAST(sls_order_dt AS VARCHAR) AS DATE)   
+            END AS sls_order_dt,
+
+            CASE WHEN sls_ship_dt = 0  OR LEN(sls_ship_dt) != 8 THEN NULL
+                 ELSE CAST(CAST(sls_ship_dt AS VARCHAR) AS DATE)   
+            END AS sls_ship_dt,
+
+            CASE WHEN sls_due_dt = 0  OR LEN(sls_due_dt) != 8 THEN NULL
+                 ELSE CAST(CAST(sls_due_dt AS VARCHAR) AS DATE)   
+            END AS sls_due_dt,
+
+            CASE WHEN sls_sales IS NULL OR sls_sales <= 0 OR sls_sales !=ABS( sls_price) * sls_quantity 
+                        THEN ABS(sls_price) * sls_quantity 
+                ELSE sls_sales
+            END AS sls_sales,
+            sls_quantity,
+            CASE WHEN sls_price <= 0 OR sls_price IS NULL 
+                            THEN sls_sales / NULLIF(ABS(sls_quantity), 0)
+                    ELSE sls_price
+            END AS sls_price
+        FROM bronze.crm_sales_details
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading  Table 3 is  ' + CAST (DATEDIFF(second,@start_time,@end_time ) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+        
+
+        PRINT '------------------------------------------------------';
+        PRINT 'Loading ERP Tables';
+        PRINT '------------------------------------------------------';
+
+        -- CLEAN & LOAD: erp_cust_az12
+        SET @start_time = GETDATE();
+        PRINT '>> Truncating Table: silver.erp_cust_az12'
+        TRUNCATE TABLE silver.erp_cust_az12;
+        PRINT '>> Inserting Data Into: silver.erp_cust_az12'
+
+        INSERT INTO silver.erp_cust_az12 (
+                cid,
+                bdate,
+                gen
+        )
+        SELECT
+            CASE WHEN cid LIKE 'NAS%' THEN SUBSTRING(cid,4, LEN(cid))
+                 ELSE cid
+            END AS cid,
+            CASE WHEN  bdate > GETDATE() THEN NULL
+                ELSE bdate
+            END AS bdate,
+            CASE WHEN UPPER(TRIM(gen)) IN( 'F', 'FEMALE') THEN 'Female'
+                 WHEN UPPER(TRIM(gen)) IN ( 'M' , 'MALE' ) THEN 'Male'
+                 ELSE 'n/a'
+            END as gen
+    
+        FROM bronze.erp_cust_az12
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading Table 4  is  ' + CAST (DATEDIFF(second,@start_time, @end_time ) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+        --  CLEAN & LOAD: erp_loc_a101
+        SET @start_time = GETDATE();
+        PRINT '>> Truncating Table: silver.erp_loc_a101'
+        TRUNCATE TABLE silver.erp_loc_a101;
+        PRINT '>> Inserting Data Into: silver.erp_loc_a101'
+        INSERT INTO silver.erp_loc_a101 (
+            cid,
+            cntry
+        )
+        SELECT 
+            REPLACE(cid, '-','') AS cid,
+            CASE WHEN UPPER(TRIM(cntry)) IN ('USA','US') THEN 'United States'
+                 WHEN UPPER(TRIM(cntry)) = 'DE' THEN 'Germany'
+                 WHEN UPPER(TRIM(cntry)) = '' OR cntry IS NULL  THEN 'n/a'
+                 ELSE TRIM(cntry)
+            END AS cntry
+        FROM bronze.erp_loc_a101
+
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading Table 5 is  ' + CAST (DATEDIFF(second,@start_time,  @end_time ) AS NVARCHAR) + ' Second'
+        PRINT '>> ---------------------------------------------------------------'
+
+        --CLEAN & LOAD: erp_px_cat_g1v2
+        SET @start_time = GETDATE();
+        PRINT '>> Truncating Table: silver.erp_px_cat_g1v2'
+        TRUNCATE TABLE silver.erp_px_cat_g1v2;
+        PRINT '>> Inserting Data Into: silver.erp_px_cat_g1v2'
+        INSERT INTO silver.erp_px_cat_g1v2 (
+           id,
+           cat,
+           subcat,
+           maintenance
+        )
+        SELECT   
+           id,
+           cat,
+           subcat,
+           maintenance  
+        FROM bronze.erp_px_cat_g1v2 
+        SET @end_time = GETDATE() 
+        PRINT '>>> The Delay for loading table 6 is  ' + CAST (DATEDIFF(second,@start_time, @end_time ) AS NVARCHAR) + ' Seconds'
+        PRINT '=================================================='
+        PRINT 'Loading Silver Layer is Completed'
+        SET @whole_batch_end_time = GETDATE();
+        PRINT '   - Total Load Duration:  ' + CAST (DATEDIFF(second ,@whole_batch_Start_time, @whole_batch_end_time) AS NVARCHAR) + ' Seconds'
+        PRINT '=================================================='
+    END TRY
+    BEGIN CATCH
+        PRINT '==========================================='
+        PRINT 'ERROR OCCURED DURING LOADING  BRONZE LAYER'
+        PRINT 'Error Message ' + ERROR_MESSAGE();
+        PRINT 'Error Message ' + CAST (ERROR_NUMBER() AS NVARCHAR);
+        PRINT '==========================================='
+    END CATCH 
+END
+
+
+EXEC silver.load_silver
+
+
+ /* 
+                                                    +-------------+
+          +-----------------------------------------| CONSISTENCY |------------------------------------------+
+          |                                         +-------------+                                          |
+          |         If you interoduce an improvement, like better logging or error handling, in one stored   |
+          |     procedures apply it to the others to maintain consistent standards and benefits.             |
+          |                                                                                                  |
+          +--------------------------------------------------------------------------------------------------+                                  */                                         
+    
+
+--                                          12-1-7-5    BUILD SILVER LAYER:DOCUMENT DATA FLOW
+
+
+--                                          12-1-7-6    BUILD SILVER LAYER:COMMIT CODE IN Git Repo 
+
+
+--                                    12-1-8     DATA WAREHOUSE PROJECTS: GOLD LAYER 
+
+/*
+
+    Maine Steps:
+
+
+                  +-------------+                      +----------+                    +------------+                      +-----------------+
+            +-----|  Analysing  |-------+        +-----|  Coding  |-----+        +-----| Validating |-------+        +-----| DOCS & Version  |-------+  
+            |     +-------------+       |        |     +----------+     |        |     +------------+       |        |     +-----------------+       |
+            |  Explore & Understand the |=======>|   Data integration   |=======>|    Data Integration      |=======>|          Documenting          |
+            |      Business Objects     |        |                      |        |         Checks           |        |       Versioning in GIT       |
+            +---------------------------+        +---+------------------+        +--------------------------+        +-------------------------------+
+                                                     |
+                                                     |-> Build the Business 
+                                                     |       Object
+                                                     |
+                                                     |-> Choose Type Dimention
+                                                     |        vs Fact
+                                                     |
+                                                     |-> Rename to friendly
+                                                              names
+
+
+
+
+
+--                                          12-1-8  GOLD LAYER: WHAT IS DATA MODELING ?
+    /*
+
+                             
+        RAW DATA ----->    Organize and Structured    
+                                   
+                                   
+        Organize and Structured : Putting Data in new Friendly and ease tu understand Objects eache one of them focus 
+                                    on One information and DESCRIPE the relationship between this objects by connecting 
+                                    them using lines ( Logical data Model)
+
+        Stages : 
+                    
+                -   Conceptual Data Model: Focuses only on entities and relationship, with no details (BIG PICTURE).
+                -   Logical Data Model: Focuses on columns, without many details for each column (BLUEPRINT).
+                -   Physical Data Model: Includes all technical details (IMPLEMENTATION).
+*/
+
+
+
+
+
+--  Source:https://www.youtube.com/watch?v=SSKVgrwhzus&t=94123                                                                    
+
