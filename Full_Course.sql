@@ -8110,9 +8110,1341 @@ EXEC silver.load_silver
                 -   Physical Data Model: Includes all technical details (IMPLEMENTATION).
 */
 
+--                                                  12-1-8-2  GOLD LAYER: STAR SCHEMA VS. SNOWFLAKE SCHEMA
+
+/*
+            + Star Schema:  Simple & Easy   !! BIG DIMENTIONS  
+                    
+                                   +------+                      +------+
+                                   |      |                      |      |
+                                   | DIM  |<----------+--------->| DIM  |
+                                   |      |           |          |      |    
+                                   +------+           |          +------+
+                                                      | 
+                                                +-----+------+
+                                                |            |
+                                                |            |
+                                                |    FACT    |
+                                                |            |
+                                                |            |
+                                                +-----+------+
+                                                      |
+                                   +------+           |         +------+
+                                   |      |           |         |      |
+                                   | DIM  |<----------+-------->| DIM  |
+                                   |      |           |         |      |    
+                                   +------+           |         +------+
+                                                      V
+                                                   +------+                    
+                                                   |      |                    
+                                                   | DIM  |                     
+                                                   |      |                        
+                                                   +------+ 
+
+
+            + Snowflake Schema:  !! MORE COMPLEXE  | Large Datasets 
+
+                +---+                                                                 +---+
+                |DIM|<----+        +------+                      +------+        +--->|DIM|         
+                +---+     |        |      |                      |      |        |    +---+ 
+                          |--------+ DIM  |<----------+--------->| DIM  |--------|
+                          |        |      |           |          |      |        |
+                          |        +------+           |          +------+        |
+                +---+     |                           |                          |     +---+ 
+                |Dim|<----+                     +-----+------+                   +---->|Dim| 
+                +---+                           |            |                         +---+
+                                                |            |
+                                                |    FACT    |
+                                                |            |
+                                                |            |
+                                                +-----+------+
+                                                      |
+                                   +------+           |         +------+
+                                   |      |           |         |      |
+                                   | DIM  |<----------+-------->| DIM  |
+                                   |      |           |         |      |    
+                                   +------+           |         +------+
+                                                      V
+                                                   +------+                    
+                                                   |      |                    
+                                                   | DIM  |                     
+                                                   |      |                        
+                                                   +------+ 
+*/
+
+
+--                                                  12-1-8-3  GOLD LAYER: DIMENSIONS VS FACTS
+                        
+/*
+
+        +------------------------------------------------+------------------------------------------------+
+        |                   DIMENSION                    |                      FACTS                     |
+        +------------------------------------------------+------------------------------------------------+
+        |  -    Descriptive Information that give        |  -   Quantitative Information that represents  |
+        |             context to your data               |                      events                    |
+        +------------------------------------------------+------------------------------------------------+
+        |        Who ?  What ?   Where ?                 |              How much ?  How many ?            |
+        +------------------------------------------------+------------------------------------------------+
+*/
+
+--                                                  12-1-8-3  BUILDING GOLD LAYER: CREATE DIMENSION CUSTOMERS 
+
+
+SELECT 
+    ci.cst_id,
+    ci.cst_key,
+    ci.cst_firstname,
+    ci.cst_lastname,
+    ci.cst_material_status,
+    ci.cst_gndr,
+    ci.cst_create_date,
+    ca.bdate,
+    ca.gen,
+    la.cntry
+FROM silver.crm_cust_info ci
+LEFT JOIN silver.erp_cust_az12 ca
+ON        ci.cst_key = ca.cid
+LEFT JOIN silver.erp_loc_a101 la 
+ON        ci.cst_key = la.cid
+GO
+
+
+/*
+                                                        +--------+
+                    +-----------------------------------|   TIP  |-----------------------------------+
+                    |                                   +--------+                                   |
+                    | After Joining table, check if any dublicate were introduced by the join Logic  |
+                    |                                                                                |
+                    +--------------------------------------------------------------------------------+
+*/
+/*===========================================================================================
+                                    MAIN QUERIE: 
+===========================================================================================*/
+
+IF OBJECT_ID ('gold.dim_customers', 'V') IS NOT NULL
+    DROP VIEW gold.dim_customers
+GO
+
+CREATE VIEW gold.dim_customers AS 
+SELECT 
+    Row_Number() OVER(ORDER BY cst_id)  AS      customer_key, 
+    ci.cst_id                           As      customer_id,
+    ci.cst_key                          AS      customer_number,
+    ci.cst_firstname                    AS      first_name,
+    ci.cst_lastname                     AS      last_name,
+    la.cntry                            AS      country,
+    ci.cst_material_status              AS      marital_status,
+    CASE WHEN ci.cst_gndr != 'n/a' THEN  ci.cst_gndr --CRM is the Master for gender info 
+            ELSE COALESCE(ca.gen, 'n/a')
+    END                                 AS      Gender,
+    ca.bdate                            AS      birthdate,
+    ci.cst_create_date                  AS      create_date
+FROM silver.crm_cust_info ci
+LEFT JOIN silver.erp_cust_az12 ca
+ON        ci.cst_key = ca.cid
+LEFT JOIN silver.erp_loc_a101 la 
+ON        ci.cst_key = la.cid
+
+
+
+-- Integration echo
+SELECT 
+    ci.cst_gndr,
+    ca.gen,
+    CASE WHEN ci.cst_gndr != 'n/a' THEN  ci.cst_gndr --CRM is the Master for gender info 
+         ELSE COALESCE(ca.gen, 'n/a')
+    END AS new_gen
+
+FROM silver.crm_cust_info ci
+LEFT JOIN silver.erp_cust_az12 ca
+ON        ci.cst_key = ca.cid
+LEFT JOIN silver.erp_loc_a101 la 
+ON        ci.cst_key = la.cid
+WHERE ci.cst_gndr != ca.gen
+ -- NULLs often Comes from joined tables!
+ -- NULL will aapear if SQL finds no match
+
+ -- Sort the columns into logical groups to improve readibility
+
+ /*
+                                    +---------------+
+         +-------------------------+| Surrogate Key |--------------------------+
+         |                          +---------------+                          |
+         |     Systeme-generated unique identifier assigned to each record     |
+         |                              in a table                             |
+         |  - DDL-based generation.                                            |
+         |  - Query-based using Window function (row_number)                   |
+         +---------------------------------------------------------------------+
+*/
+
+
+--    QUALITY CHECK OF THE GOLD TQBLE 
+
+SELECT * FROM gold.dim_customers
+GO
+
+--                                                  12-1-8-4  BUILDING GOLD LAYER: CREATE DIMENSION PRODUCTS
+/*===========================================================================================
+                                    MAIN QUERIE: 
+===========================================================================================*/
+CREATE VIEW gold.dim_products AS
+SELECT 
+    ROW_NUMBER() OVER(ORDER BY pn.prd_start_dt, pn.prd_key)     AS      product_key, 
+    pn.prd_id                                                   AS      product_id,
+    pn.prd_key                                                  AS      product_number,
+    pn.prd_nm                                                   AS      product_name,
+    pn.cat_id                                                   AS      category_id,
+    pc.cat                                                      AS      categroy,
+    pc.subcat                                                   AS      subcategory,
+    pc.maintenance,
+    pn.prd_cost                                                 AS      cost,
+    pn.prd_line                                                 AS      product_line,
+    pn.prd_start_dt                                             AS      start_date
+FROM silver.crm_prd_info pn
+LEFT JOIN silver.erp_px_cat_g1v2 pc 
+ON pn.cat_id = pc.id
+WHERE pn.prd_end_dt IS NULL             -- Filter out all historical Data
+
+-- Sort the Columns into logical groups to improve readability
+
+SELECT * FROM gold.dim_products
+GO
+
+--                                                  12-1-8-4  BUILDING GOLD LAYER: CREATE FACT SALES
+CREATE VIEW gold.fact_sales AS
+SELECT 
+    sd.sls_ord_num      AS   order_number,
+    pr.product_key ,
+    cs.customer_key,
+    sd.sls_order_dt     AS   order_date,
+    sd.sls_ship_dt      AS   shipping_date,
+    sd.sls_due_dt       AS   due_date,
+    sd.sls_sales        AS   sales_amount,
+    sd.sls_quantity     AS   quantity,
+    sd.sls_price        As   price   
+FROM silver.crm_sales_details sd
+LEFT JOIN gold.dim_products pr
+ON sd.sls_prd_key = pr.product_number
+LEFT JOIN gold.dim_customers cs
+ON sd.sls_cust_id = cs.customer_id
+-- Building Fact: Use the dimension's surrogate keys instead of IDs to
+--                  easily connect facts with dimensions
+-- Fact Check: check if all dimension tables can successfully join to the fact table.
+
+-- Foreign key integrity (Dimensions) 
+SELECT * 
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_customers c
+ON c.customer_key = f.customer_key
+LEFT JOIN gold.dim_products pr
+ON pr.product_key = f.product_key
+WHERE c.customer_key IS NULL
+
+--                                                  12-1-8-4  BUILDING GOLD LAYER:BUILD THE STAR SCHEMA MODEL (DRAW.IO)
+/*
+
+   The Relationship : in a star schema between fact and dimensions is 1-to-many (1:N)
+   MANY (Optional):
+        1.  Customers who haven't placed any orders yet (new customers).
+        2.  Customers who have placed only one order.
+        3.  Customers who have placed multiple orders.
+*/
+
+--                                                  12-1-8-5  BUILDING GOLD LAYER:DATA CATALOG
+/*
+    DEFS:
+        -   DATA CATALOG: An organized inventory of data assets within an organization, providing metadata, 
+                         data lineage, and data governance information to facilitate data discovery, 
+                         understanding, and management.
+*/
+
+/*=====================================================================================================================================================
+    Data Dictionary for Gold Layer 
+=======================================================================================================================================================
+
+Overview:
+
+    The gold layey is the business-level data representation, structured to support analytical and reporting use case.
+       It consists of dimension tables and fact tables for specific business metrics.
+
+-----------------------------------------------------------------------------------------------------------------------
+
+1. gold.dim_customers
+    .   Purpose: Stores customer details enriched with demographic and geographic data.
+    .   Columns:
+
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | Column Name         |    Data Type   |                                    Description                                         |                         
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | customer_key        | INT            | Surrogate key uniquely identifying each customer record in the dimension tables        |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | customer_id         | INT            | Unique numerical identifier assigned to each customer.                                 |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | customer_number     | NVARCHAR(50)   | Alphanumeric identifier representing the customer, used for tracking and referencing   |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | first_name          | NVARCHAR(50)   | The customer's first name, as recorded the system.                                     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | last_name           | NVARCHAR(50)   | The customer's last name or family name.                                               |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | country             | NVARCHAR(50)   | The country of residence for the customer (e.g., 'Australia')                          |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | marital_status      | NVARCHAR(50)   | The marital status of the customer (e.g., 'Married','Single')  .                       |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+        | gender              | NVARCHAR(50)   | The gender of the customer (e.g., 'Male','Female','n/a').                              |
+        +---------------------+----------------+----------------------------------------------------------------------------------------+
+
+2. gold.dim_products
+    .   Purpose:Provide information about the products and their attributes.
+    .   Columns:
+
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        |      Column Name    |   Data Type    |                                    Description                                               |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | product_key         | INT            |   Surrogate key uniquely identifying each product record in the product dimension tables     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | product_id          | INT            |   A Unique identifier assinged to the product for internale tracking and referencing         |  
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | product_number      | NVARCHAR(50)   |   A structured Alphanumeric code representing the product, often used for                    |
+        |                     |                |   categorization or inventory                                                                |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | product_name        | NVARCHAR(50)   |   Descriptive name of the product, including key details such as type, color, and size       |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | categorie_id        | NVARCHAR(50)   |   A unique identifier for the product's category, linking to its high-level classification   |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | category            | NVARCHAR(50)   |   The broader classificationof the product (e.g., Bikes, Components) to group related items  |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | subcategory         | NVARCHAR(50)   |   A more detailed classification of the product within the category, such as producte type.  |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | maintenance_required| NVARCHAR(50)   |   Indicates whether the product requires maintenance (e.g., 'Yes','No' )                     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | cost                | INT            |  The cost or base price of the product, measured in monetary units.                          |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | Product_line        | NVARCHAR(50)   |   The specific product line or series to which the product belongs (e.g., Road, Mountai )    |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | start_date          | DATE           |   The Date when the Product became available for sale or use, stored in.                     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+
+3. gold.fact_sales
+    .   Purpose:stores transactional sales data for analytical purposes.
+    .   Columns:
+
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        |      Column Name    |   Data Type    |                                    Description                                               |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | order_number        | NVARCAHR(50)   |   A unique alphanumeric identifier for each sales order (e.g., 'SO54496'                     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | product_key         | INT            |   Surrogate key linking the order to the product dimension table.                            |  
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | customer_key        | INT            |   Surrogate key linking the order to the customer dimension table.                           |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | Order_date          | DATE           |   The date when the order was placed                                                         |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | shipping_date       | DATE           |   The Date When the order was shipped to the customer.                                       |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | due_date            | DATE           |   The Date when the order payement was due                                                   |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | Sales_amount        | INT            |  The totale monetary value of the sale for the line item, in whole currency units (e.g., 25) |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | quantity            | INT            |  The number of units of the product ordered for the line item (e.g., 1 )                     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+        | price               | INT            |  The price per unit of the product for the line item, in whole currency unity (e.g., 25)                     |
+        +---------------------+----------------+----------------------------------------------------------------------------------------------+
+*/
+
+
+--                                                  12-1-8-5  BUILDING GOLD LAYER:EXTEND DATA FLOW (DRAW.IO) 
+
+   
+--                                                  12-1-8-6  BUILDING GOLD LAYER:COMMIT CODE IN GIT REPO
+
+
+
+--                         12-2     EXPLORAROTY DATA ANALYSIS (EDA) PROJECT
+/*
+
+             EXPLORAROTY DATA ANALYSIS ( E D A ):
+     +----------------------+
+     | "Understand Queries" |
+     +----------+-----------+
+                |
+                |--> Basic Queries  
+                |
+                |--> Data Profiling
+                |
+                |--> Simple Aggregation 
+                |
+                |--> Subquery
+
+         + DIMENSIONS & MEASURES
+
+                              |--> Dimension: Category, Product, Birthdate, ID  
+            Dataset ----------|                                                            
+                              |--> Measure: Sales, Quantity, Age 
+
+                                         |--> NO ---> Dimension 
+            Is Data Type = Number ?------|                                              |--> NO  --> Dimension
+                                         |--> YES --> Does it make sense to aggregate --|
+                                                                                        |--> YES --> MEASURE
 
 
 
 
---  Source:https://www.youtube.com/watch?v=SSKVgrwhzus&t=94123                                                                    
+                
+                                                    +----------------+
+                                                    | Data Analytics |
+                                                    +--------+-------+
+                                                             |
+                           +---------------------------------+------------------------------+
+                           |                                                                |
+                   +-------+-------+                                                +-------+-------+                                                           
+                   |  Explorarty   |                                                |    Advance    |
+                   | Data Analysis |                                                |   Analytics   |
+                   |     (EDA)     |                                                +-------+-------+                                    
+                   +-------+-------+                                                        |                                        
+                           |                                                                |--> 7. Change-Over-Time (Trends)                           
+                           |--> 1. Database Exploration                                     |                            
+                           |                                                                |--> 8. Cumulative Analysis                        
+                           |--> 2. Dimensions Exploration                                   |                            
+                           |                                                                |--> 9. Performance Analysis                        
+                           |--> 3. Data Exploration                                         |                                        
+                           |                                                                |--> 10. Part-to-Whole (Proportional)                
+                           |--> 4. Measures Exploration (Big Numbers)                       |                                        
+                           |                                                                |--> 11. Data Segmentation                         
+                           |--> 5. Magnitude                                                |                    
+                           |                                                                |--> 12. Reporting                    
+                           |--> 6. Ranking (Top N - Bottom N)                                                                                                                   
+
+
+*/
+
+--                         12-2-1    EXPLORAROTY DATA ANALYSIS (EDA) PROJECT: GET DATASET
+
+
+/*
+=============================================================
+Create Database and Schemas
+=============================================================
+Script Purpose:
+    This script creates a new database named 'DataWarehouseAnalytics' after checking if it already exists. 
+    If the database exists, it is dropped and recreated. Additionally, this script creates a schema called gold
+	
+WARNING:
+    Running this script will drop the entire 'DataWarehouseAnalytics' database if it exists. 
+    All data in the database will be permanently deleted. Proceed with caution 
+    and ensure you have proper backups before running this script.
+*/
+
+USE master;
+GO
+
+-- Drop and recreate the 'DataWarehouseAnalytics' database
+IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'DataWarehouseAnalytics')
+BEGIN
+    ALTER DATABASE DataWarehouseAnalytics SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE DataWarehouseAnalytics;
+END;
+GO
+
+-- Create the 'DataWarehouseAnalytics' database
+CREATE DATABASE DataWarehouseAnalytics;
+GO
+
+USE DataWarehouseAnalytics;
+GO
+
+-- Create Schemas
+
+CREATE SCHEMA gold;
+GO
+
+CREATE TABLE gold.dim_customers(
+	customer_key int,
+	customer_id int,
+	customer_number nvarchar(50),
+	first_name nvarchar(50),
+	last_name nvarchar(50),
+	country nvarchar(50),
+	marital_status nvarchar(50),
+	gender nvarchar(50),
+	birthdate date,
+	create_date date
+);
+GO
+
+CREATE TABLE gold.dim_products(
+	product_key int ,
+	product_id int ,
+	product_number nvarchar(50) ,
+	product_name nvarchar(50) ,
+	category_id nvarchar(50) ,
+	category nvarchar(50) ,
+	subcategory nvarchar(50) ,
+	maintenance nvarchar(50) ,
+	cost int,
+	product_line nvarchar(50),
+	start_date date 
+);
+GO
+
+CREATE TABLE gold.fact_sales(
+	order_number nvarchar(50),
+	product_key int,
+	customer_key int,
+	order_date date,
+	shipping_date date,
+	due_date date,
+	sales_amount int,
+	quantity tinyint,
+	price int 
+);
+GO
+
+TRUNCATE TABLE gold.dim_customers;
+GO
+
+BULK INSERT gold.dim_customers
+FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-analytics-project\datasets\flat-files\dim_customers.csv'
+WITH (
+	FIRSTROW = 2,
+	FIELDTERMINATOR = ',',
+	TABLOCK
+);
+GO
+
+TRUNCATE TABLE gold.dim_products;
+GO
+
+BULK INSERT gold.dim_products
+FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-analytics-project\datasets\flat-files\dim_products.csv'
+WITH (
+	FIRSTROW = 2,
+	FIELDTERMINATOR = ',',
+	TABLOCK
+);
+GO
+
+TRUNCATE TABLE gold.fact_sales;
+GO
+
+BULK INSERT gold.fact_sales
+FROM 'C:\Users\THINKPAD\Desktop\SQL\SQL\sql-data-analytics-project\datasets\flat-files\fact_sales.csv'
+WITH (
+	FIRSTROW = 2,
+	FIELDTERMINATOR = ',',
+	TABLOCK
+);
+GO
+
+
+--                         12-2-2   EXPLORAROTY DATA ANALYSIS:  DATABASE EXPLORATION 
+
+-- Explore All Objects in the Database: 
+SELECT * FROM INFORMATION_SCHEMA.TABLES   -- Get All Tables in The Database 
+
+
+
+-- Explore All Columns in the Database:
+SELECT * FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'dim_customers'
+
+--                         12-2-3   EXPLORAROTY DATA ANALYSIS: DIMENSIONS EXPLORATION
+/*
+        DEFs: 
+            -   Identify the unique values ( or Categories ) in each dimension.
+            -   Recognizing how data might be groubed or Segmanted, which is useful for later analysis.
+        SYNTAXE: 
+                DISTINCT [Dimension]
+*/
+
+-- Explore All countries our customers come from.
+SELECT DISTINCT country FROM gold.dim_customers
+
+-- Explore All Categories 'The major Divisions'
+SELECT DISTINCT category, subcategory, product_name FROM gold.dim_products
+Order BY 1,2,3
+
+--                         12-2-4  EXPLORAROTY DATA ANALYSIS: DATA EXPLORATION
+/*
+       + DEFs: 
+                -   Identifier  the earliest and latest dates (boundaries).
+                -   Understand the scope of data and the timespan
+        + SYNTAX: 
+                MIN/MAX [Date Dimension]
+*/
+
+-- Fin the date of the first and the last order:
+-- How many of years of sales are available;
+SELECT *,
+    DATEDIFF(year,first_order_date, last_order_date) AS order_rang_years
+FROM (
+    SELECT 
+         MIN(order_date) AS first_order_date,
+         MAX(order_date) AS last_order_date 
+    FROM gold.fact_sales
+)t
+GO
+
+
+-- Find the youngest and oldest customer
+
+
+
+SELECT *
+FROM (
+    SELECT TOP 1 
+        'Oldest' AS customer_type,
+        c.first_name,
+        c.last_name,
+        c.birthdate,
+        DATEDIFF(year, c.birthdate, GETDATE()) AS age
+    FROM gold.dim_customers c
+    WHERE c.birthdate IS NOT NULL
+    ORDER BY birthdate ASC
+) AS oldest_customer
+
+UNION ALL
+SELECT 
+    *
+FROM (
+    SELECT TOP 1 
+        'Youngest' AS customer_type,
+        c.first_name,
+        c.last_name,
+        c.birthdate,
+        DATEDIFF(year, c.birthdate, GETDATE()) AS age
+    FROM gold.dim_customers  c
+    WHERE c.birthdate IS NOT NULL
+    ORDER BY c.birthdate DESC
+) AS youngest_customer
+GO 
+
+SELECT 
+    MIN(birthdate) AS oldest_customer,
+    DATEDIFF(year, MIN(birthdate), GETDATE()) AS oldest_age,
+    MAX(birthdate) AS youngest_customer,
+    DATEDIFF(year, MAX(birthdate), GETDATE()) AS youngest_age
+FROM gold.dim_customers
+
+
+--                         12-2-5  EXPLORAROTY DATA ANALYSIS:MESURES EXPLORATION (Big Number)
+/*
+        DEF:
+            -   Calculate the key metric of the business (BIG NUMBER)
+                        -HIGHEST LEVEL of Aggregation | LOWEST LEVEL of Details-
+*/
+
+USE DataWarehouseAnalytics
+
+-- Find The Totale Sales
+SELECT SUM(sales_amount) AS total_sales FROM gold.fact_sales
+
+-- Find how many items are sold
+SELECT SUM(quantity) AS total_items FROM gold.fact_sales
+
+-- Find the average selling price
+SELECT AVG(price) As avg_price FROM gold.fact_sales
+
+-- Find the Totle number of orders
+SELECT COUNT(order_number) AS total_order FROM gold.fact_sales
+SELECT COUNT(DISTINCT(order_number)) AS total_order FROM gold.fact_sales
+
+-- Find the Totale number of products
+SELECT COUNT(product_name) AS total_products FROM gold.dim_products
+SELECT COUNT(DISTINCT(product_name)) AS total_products FROM gold.dim_products
+
+-- Find the Totle number of customers
+SELECT COUNT(customer_key) AS total_customers FROM gold.dim_customers
+
+-- Find the Totle number of customers that has placed an order
+SELECT COUNT(DISTINCT(customer_key))  total_customers FROM gold.fact_sales
+
+
+/*
+    SQL TASK: 
+            Generate Report that shows all key metrics of the business
+*/
+
+SELECT 'Total Sales' AS measure_name,SUM(sales_amount) AS  measure_value FROM gold.fact_sales
+UNION ALL
+SELECT 'Total Items' ,SUM(quantity) FROM gold.fact_sales
+UNION ALL
+SELECT 'Avg Price', AVG(price) FROM gold.fact_sales
+UNION ALL
+SELECT 'Total Order' , COUNT(DISTINCT(order_number))  FROM gold.fact_sales
+UNION ALL
+SELECT 'Total Products' , COUNT(DISTINCT(product_name)) FROM gold.dim_products
+UNION ALL
+SELECT 'Total Customers', COUNT(customer_key)  FROM gold.dim_customers
+
+--                         12-2-6  EXPLORAROTY DATA ANALYSIS: MAGNITUDE ANALYSIS
+/*  
+        DEF: 
+            -   Compare the measure Values by categories
+            -   It hleps us understand the importance of different categories.
+       SYNTAX:
+                     ∑[Measure] BY [Dimension]
+                e.g.: 
+                    Total Sales By Country
+                    Total Quantity By Categorie
+                    Average Price By Product
+                    Total Order BY Customer 
+*/
+--=============================================
+-- Find the Total customers by Country 
+--=============================================
+SELECT 
+    country,
+    count(customer_number) AS total_Customer_by_country 
+FROM gold.dim_customers 
+Group by country
+ORDER BY total_Customer_by_country DESC
+
+
+--==============================================
+-- Find Total products by category
+--=============================================
+SELECT 
+    category,
+    count(product_number) AS total_product_by_category 
+FROM gold.dim_products
+Group by category
+ORDER BY total_product_by_category DESC
+
+
+--============================================
+-- Find the total customer by gennder
+--=============================================
+SELECT 
+    gender,
+    Count(customer_number) AS total_cust_by_gnder
+FROM gold.dim_customers
+GROUP BY gender
+ORDER BY total_cust_by_gnder DESC
+
+
+--=============================================
+-- What is the average costs in each category? 
+--=============================================
+SELECT
+    category,
+    AVG(cost) AS avg_cost_by_categorie
+FROM gold.dim_products
+GROUP BY category
+ORDER BY avg_cost_by_categorie DESC
+
+
+--=========================================================
+-- What is the totale revenue generated for each category?
+--=========================================================
+SELECT 
+    p.category,
+    SUM(f.sales_amount) AS total_revenue 
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_products p 
+ON p.product_key = f.product_key
+GROUP BY p.category
+ORDER BY total_revenue DESC
+
+
+--=====================================================
+-- Find the Total Revenu is generated by Each Customer
+--=====================================================
+SELECT 
+    cs.customer_key, 
+    cs.first_name,
+    cs.last_name,
+    SUM(f.sales_amount) customer_revenu
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_customers cs
+ON cs.customer_key = f.customer_key
+GROUP BY
+    cs.customer_key, 
+    cs.first_name,
+    cs.last_name 
+ORDER BY customer_revenu DESC
+
+
+--===========================================================
+-- What is the distribution of sold items across countries ? 
+--============================================================
+SELECT 
+    c.country,
+    SUM(f.quantity) AS total_sold_items
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_customers c
+ON f.customer_key = c.customer_key
+GROUP BY c.country
+ORDER BY total_sold_items DESC
+
+
+--                         12-2-7  EXPLORAROTY DATA ANALYSIS: RANKING (Top N - Bottom N)
+
+/*
+        DEF: 
+            -   Order the values of dimensions by measure
+                 -Top N performers | Bottom N Performers-
+        SYNTAX: 
+                    RANK[Dimension] BY ∑[Measure]
+        E.G.:
+                    Rank coutries BY Totale Sales
+                    Top 5 products By Quantity 
+                    Bottom 3 customers BY Total Orders
+*/
+--================================================
+--Which 5 products generate the highest revenue ? 
+--================================================
+SELECT TOP 5 
+    p.product_name,
+    SUM(f.sales_amount) as total_sales
+FROM gold.fact_sales  f
+LEFT JOIN gold.dim_products p
+ON f.product_key = p.product_key
+GROUP BY p.product_name
+ORDER BY total_sales DESC
+
+
+--=============================================================
+--What are the 5 worst-performing products in terms of sales ?
+--=============================================================
+    -- #1: Using  TOP  : 
+SELECT TOP 5 
+    p.product_name,
+    SUM(f.sales_amount) as total_sales
+FROM gold.fact_sales  f
+LEFT JOIN gold.dim_products p
+ON f.product_key = p.product_key
+GROUP BY p.product_name
+ORDER BY total_sales 
+
+    -- #2: Using Window function: 
+ SELECT  
+    * 
+ FROM (
+     SELECT  
+        p.product_name,
+        SUM(f.sales_amount) as total_sales,
+        ROW_NUMBER() OVER(ORDER BY SUM(f.sales_amount) DESC) rank_product 
+    FROM gold.fact_sales  f
+    LEFT JOIN gold.dim_products p
+    ON f.product_key = p.product_key
+    GROUP BY p.product_name)t 
+WHERE rank_product <= 5
+
+
+/*================================================================================
+    SQL TASK: 
+                Find the TOP-10 customers who have generated the highest revenue 
+                And 3 customers with the fewest order placed.
+================================================================================*/
+-- Top 10 customers who have generated the highest revenu: 
+SELECT TOP 10
+    cs.customer_key, 
+    cs.first_name,
+    cs.last_name,
+    SUM(f.sales_amount) customer_revenu
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_customers cs
+ON cs.customer_key = f.customer_key
+GROUP BY
+    cs.customer_key, 
+    cs.first_name,
+    cs.last_name 
+ORDER BY customer_revenu DESC
+
+--  The 3 customers with the fewest order placed: 
+SELECT TOP 3
+    cs.customer_key, 
+    cs.first_name,
+    cs.last_name,
+    COUNT(DISTINCT order_number) AS total_orders
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_customers cs
+ON cs.customer_key = f.customer_key
+GROUP BY
+    cs.customer_key, 
+    cs.first_name,
+    cs.last_name 
+ORDER BY total_orders 
+
+
+--                         12-3 SQL PROJECTS: ADVANCED DATA ANALYTICS PROJECT
+/*
+    INTRO: 
+                    +------------------+
+                    |  Advanced  Data  |
+                    |     Analytics    |      
+                    +---+--------------+
+                        |
+       +----------------+----------------+ 
+       |    "Answer Busines Questions"   |
+       +----------------+----------------+ 
+                        |   +------------------+
+                        |-->| Complex Quries   |
+                        |   +------------------+
+                        |   +------------------+
+                        |-->| Window Functions |
+                        |   +------------------+
+                        |   +------------------+
+                        |-->|        CTE       |
+                        |   +------------------+
+                        |   +------------------+
+                        |-->|    Subqueries    | 
+                        |   +------------------+
+                        |   +------------------+
+                        |-->|      Reports     |
+                            +------------------+
+*/
+
+--                              12-3-1  ADVANCED DATA ANALYTICS PROJECT: CHANGES OVER TIME ANALYSIS
+/*
+        DEFs: 
+             -  Analysis how a mesure evolves over time.
+             -  Helps Track trends and identify seasonality in your data.
+        SYNTAXE: 
+                        ∑ [Measure] BY [Date Dimension]
+        E.G:
+                Total Sales BY Year
+                Average Cost BY Month
+*/
+
+-- Task : Analyse Sales Performance Over Time.
+Use DATAWAREHOUSEANALYTICS
+SELECT 
+    YEAR(order_date) AS order_year,
+    MONTH(order_date) AS order_month,
+    SUM(Sales_amount) AS total_sales,
+    COUNT(DISTINCT customer_key) AS total_costomers,
+    SUM(quantity) AS total_quantity
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY YEAR(order_date), MONTH(order_date)
+ORDER BY YEAR(order_date), MONTH(order_date)
+-- Change Over Years / MONTH: A high-level overview insights that helps with strategic decision-making
+
+-- Using The DATETRUNC: Rouad a date or timestamp to a specified data part
+
+SELECT 
+    DATETRUNC(MONTH, order_date) AS order_date,
+    SUM(Sales_amount) AS total_sales,
+    COUNT(DISTINCT customer_key) AS total_costomers,
+    SUM(quantity) AS total_quantity
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY DATETRUNC(MONTH, order_date)
+ORDER BY DATETRUNC(MONTH, order_date)
+
+-- FORMATING DATE
+SELECT 
+    FORMAT(order_date, 'YYYY-MMM') AS order_date,
+    SUM(Sales_amount) AS total_sales,
+    COUNT(DISTINCT customer_key) AS total_costomers,
+    SUM(quantity) AS total_quantity
+FROM gold.fact_sales
+WHERE order_date IS NOT NULL
+GROUP BY FORMAT(order_date, 'YYYY-MMM')
+ORDER BY FORMAT(order_date, 'YYYY-MMM')
+
+--                              12-3-2  ADVANCED DATA ANALYTICS PROJECT: CUMULATIVE ANALYSIS
+/*
+        DEFs:
+            -   Aggregate the data progressively over Time.
+            -   Helps to understand whether our business is growing or declining.
+        SYNTAX:
+                        ∑ [Cumulative Measure] BY [Date Dimension]
+                        N.B:  We use WINDOW FUNCTIONS 
+        E.G:
+                Runing Total Sales BY Year 
+                Moving Average of Sales By Month
+
+*/
+-- Calculate the total Sales per Month 
+-- and the running total of sales over time
+SELECT 
+    order_date,
+    total_sales,
+    SUM(total_sales) OVER(ORDER BY order_date) AS running_total,
+    AVG(avg_price) OVER (ORDER BY order_date ) AS moving_average_price
+FROM (
+    SELECT 
+        DATETRUNC(MONTH,order_date) AS order_date,
+        SUM(sales_amount) total_sales,
+        AVG(price) AS avg_price
+    FROM gold.fact_sales
+    WHERE order_date IS NOT NULL
+    GROUP BY DATETRUNC(MONTH,order_date)
+)t           
+-- Adding each row's value to the sum of all the previous row's values.
+    --   Default window FRAME: BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+
+
+--                              12-3-3  ADVANCED DATA ANALYTICS PROJECT: PERFORMANCE ANALYSIS
+
+/*
+        DEFs: 
+            -   Comparing the Current value to a target value.
+            -   Helps measure success and compare Perfrormance.
+        SYNTAX:
+                        current[Measure] - Target[Measure]
+                        We usually Use Window Fnuctions 
+        E.G: 
+                        Current Sales - Average Sales
+                        Current Year Sales - previous year Sales   <---- YOY Analysis
+                        Current Sales - Lowest Sales
+
+*/
+/*
+    TASK:
+                Analyza the yearly performance of products by comparing each product's sales to
+                both its Average sales performance and the Previous year's sales. 
+*/
+WITH yearly_product_sales AS (
+    SELECT 
+        YEAR(f.order_date) AS order_year,
+        p.product_name, 
+        SUM(f.sales_amount) AS current_sales
+    FROM gold.fact_sales f
+    LEFT JOIN gold.dim_products p
+    ON f.product_key = p.product_key
+    WHERE order_date IS NOT NULL 
+    GROUP BY 
+        YEAR(f.order_date), 
+        p.product_name
+)
+
+SELECT 
+    order_year, 
+    product_name, 
+    current_sales,
+    -- Year-over-year analysis 
+    LAG(current_sales) OVER(PARTITION BY product_name ORDER BY order_year ) AS previous_sales,
+    AVG(current_sales) OVER(PARTITION BY product_name) AS avg_sales,
+    current_sales - AVG(current_sales) OVER(PARTITION BY product_name)  AS diff_avg, 
+    CASE WHEN current_sales - AVG(current_sales) OVER(PARTITION BY product_name) > 0  THEN 'Above Avg'
+         WHEN current_sales - AVG(current_sales) OVER(PARTITION BY product_name)  < 0  THEN 'Below Avg'
+         ELSE 'Avg'
+    END avg_change , 
+    current_sales - LAG(current_sales) OVER(PARTITION BY product_name ORDER BY order_year ) AS diff_sales,
+    CASE WHEN current_sales - LAG(current_sales) OVER(PARTITION BY product_name ORDER BY order_year )  > 0  THEN 'Increase'
+         WHEN current_sales - LAG(current_sales) OVER(PARTITION BY product_name ORDER BY order_year )   < 0  THEN 'Decrease'
+         ELSE 'NO Change'
+    END py_change 
+FROM yearly_product_sales
+ORDER BY product_name, order_year
+
+--                              12-3-4  ADVANCED DATA ANALYTICS PROJECT: PART-TO-WHOLE (Proportional)
+  /*    
+            DEF:
+                        Analyze how an individual part is performing compared to th overall, 
+                    allowing us to understand which category has the greatest impact on the business. 
+            SYNTAX: 
+                                ([Measure] / Total [Measure]) * 100 BY [Dimension]
+
+            E.G: 
+                            (Sales / Total Sales ) * 100 BY Category 
+                            (Quantity / Total Quantity ) * 100 BY Country
+*/
+
+-- Which categories contribute the most to overall  sales 
+WITH category_sales AS(
+    SELECT 
+        p.category,
+        SUM(f.sales_amount)  total_sales
+    FROM gold.fact_sales f
+    LEFT JOIN gold.dim_products p
+    ON p.product_key = f.product_key
+    GROUP BY p.category 
+) 
+SELECT 
+    category,
+    total_sales, 
+    SUM (total_sales) OVER() overall_sales, 
+    CONCAT( ROUND( (CAST(total_sales AS FLOAT)/ ( SUM (total_sales) OVER() )) * 100 , 2), ' %') AS percentage_of_total
+FROM category_sales
+ORDER BY total_sales DESC
+
+--                              12-3-4  ADVANCED DATA ANALYTICS PROJECT: DATA SEGMENTATION 
+/*
+        DEFs: 
+            -   Group the data based on a specific range.
+            -   Help understand the correlation between two measures.
+        SYNTAX: 
+                        [MEASURE] BY [MEASURE]
+                      We use Case WHEN statement 
+        E.G: 
+                Total Product BY Sales Range
+                Total Customers BY Age
+*/
+/* 
+    TASK #1: 
+        Segùment products into cost ranges  and count 
+        how many products fall into each segment
+*/
+WITH product_segment AS (
+SELECT 
+    product_key,
+    product_name,
+    cost,
+    CASE WHEN cost < 100 THEN 'Bellow 100'
+        WHEN cost BETWEEN 100 AND 500 THEN '100 - 500'
+        WHEN cost BETWEEN  500 AND  1000 THEN '500 - 1000'
+        ELSE ' Above 1000'
+    END cost_range
+FROM gold.dim_products
+)
+SELECT 
+    cost_range,
+    COUNT(product_key) AS total_products
+FROM product_segment
+GROUP BY cost_range
+ORDER BY total_products DESC
+
+
+/*  
+        TASK #2:
+            +   Group customers into three segments based on thier spending behavior:
+                    -   VIP: Costomers with at least 12 months of history but spending more than €5,000.
+                    -   Regular: Customers with at least 12 months of history but spending €5,000 or less.
+                    -   NEW: lifespan less than 12 months.
+                And find the total number of customers by eaach group
+ */
+WITH customer_spending as (
+ SELECT 
+    c.customer_key,
+    SUM(f.sales_amount) AS total_spending,
+    MIN(order_date) AS first_order,
+    MAX(order_date) AS last_order, 
+    DATEDIFF( Month, MIN(order_date), MAX(order_date)) AS  lifespan
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_customers c
+ON c.customer_key = f.customer_key
+GROUP BY c.customer_key )
+SELECT
+    customer_segement,
+    COUNT(customer_key) AS total_customers
+FROM (
+    SELECT 
+        customer_key,
+        CASE WHEN lifespan >= 12 AND total_spending > 5000 THEN 'VIP'
+            WHEN lifespan >= 12 AND total_spending <= 5000 THEN 'Regular'
+            ELSE  'New'
+        END customer_segement 
+    FROM customer_spending 
+)t
+GROUP BY customer_segement
+ORDER BY total_customers DESC
+GO
+
+--                              12-3-5  ADVANCED DATA ANALYTICS PROJECT: BUILD CUSTOMER REPORT
+/*
+=============================================================================================================
+Customer Report 
+=============================================================================================================
+Purppose: 
+    -   This report consolidates key Custmomer metrics and behaviors
+Highlights: 
+    1.  Gathers essentials fields such as names, ages, and transaction details.
+    2.  Segments customers into categories (VIP, Regular, New) and age groups.
+    3.  Aggregates customer-level metrics:
+        -   total orders
+        -   total Sales
+        -   total quantity purchased
+        -   total products 
+    4.  Calculate Valuable KPIs: 
+        -   recency (months since last order)
+        -   Average order value
+        -   average monthly spend 
+======================================================================================================================
+*/
+CREATE VIEW gold.report_customers AS 
+WITH base_query AS(
+
+/*--------------------------------------------------------------------------------------------------------------------
+1) Base Query: Retrieves core columns from tables
+----------------------------------------------------------------------------------------------------------------------*/
+    SELECT
+         f.order_number,
+         f.product_key,
+         f.order_date,
+         f.sales_amount,
+         f.quantity,
+         c.customer_key,
+         c.customer_number,
+         CONCAT( c.first_name, ' ', c.last_name) AS customer_full_name, 
+         DATEDIFF( YEAR, c.birthdate, GETDATE()) AS customer_age
+    FROM gold.fact_sales f
+    LEFT JOIN gold.dim_customers c
+    ON f.customer_key = c.customer_key
+    WHERE order_date IS NOT NULL
+)
+, customer_aggregation AS (
+
+/*--------------------------------------------------------------------------------------------------------------------
+2) Customer Aggregations: Summarizes key metrics at the customers Level 
+----------------------------------------------------------------------------------------------------------------------*/
+
+SELECT 
+    customer_key,
+    customer_number,
+    customer_full_name, 
+    customer_age, 
+    COUNT(DISTINCT order_number) AS total_orders,
+    SUM(sales_amount) AS total_sales,
+    SUM(quantity) AS total_quantity,
+    COUNT(DISTINCT product_key) AS total_products, 
+    MAX(order_date) AS last_order_date,
+    DATEDIFF( Month, MIN(order_date), MAX(order_date)) AS  lifespan
+FROM base_query
+GROUP BY 
+    customer_key,
+    customer_number,
+    customer_full_name, 
+    customer_age
+)
+SELECT 
+    customer_key,
+    customer_number,
+    customer_full_name, 
+    customer_age,
+    CASE WHEN customer_age < 20 THEN 'Under 20'
+         WHEN customer_age BETWEEN 20 AND 29 THEN '20 - 29'
+         WHEN customer_age BETWEEN 30 AND 39 THEN '30 - 39'
+         WHEN customer_age BETWEEN 40 AND 49 THEN '40 - 49'
+         ELSE '50 and above'
+    END AS age_group,
+    CASE WHEN lifespan >= 12 AND total_sales > 5000 THEN 'VIP'
+         WHEN lifespan >= 12 AND total_sales <= 5000 THEN 'Regular'
+         ELSE  'New'
+    END customer_segement,
+    last_order_date,
+    DATEDIFF(month,last_order_date, GETDATE()) AS recency,
+    total_orders,
+    total_sales,
+    total_quantity,
+    total_products, 
+    lifespan,
+    -- Compute average order value (AVO)
+    CASE WHEN total_orders = 0 THEN 0
+        ELSE total_sales / total_orders 
+    END AS average_order_value, 
+    -- Compute Average monthly spend 
+    CASE  WHEN lifespan = 0 THEN total_sales
+          ELSE total_sales / lifespan 
+    END AS avg_monthly_spend
+FROM customer_aggregation
+GO
+
+--                              12-3-6  ADVANCED DATA ANALYTICS PROJECT: BUILD PRODUCT REPORT
+/*
+===========================================================================================================================
+Products Report 
+===========================================================================================================================
+Purpose: 
+    -   This report consolidates Key product metrics and behaviors 
+Highlights: 
+    1.  Gathers essentiel fields such as product name, category, subcategory, and cost
+    2.  Segments Products by revenue to identify High-Performers, Mid-Range, or Low -Performers.
+    3.  Aggregates products-level metrics:
+        -   total orders.
+        -   total Sales
+        -   total quantity sold
+        -   total customers (unique) 
+        -   lifespan (in month)
+    4.  Calculate valuable KPIs:
+        -   recency (months since last sale )
+        -   average order revenue (AOR)
+        -   average monthly revenue 
+===========================================================================================================================
+*/
+CREATE VIEW  gold.report_products AS
+WITH base_product_query AS (
+/*--------------------------------------------------------------------------------------------------------------------
+1) Base Query: Retrieves core columns from tables
+----------------------------------------------------------------------------------------------------------------------*/
+
+SELECT 
+    f.order_number,
+    f.order_date,
+    f.customer_key,
+    f.sales_amount,
+    f.quantity,
+    p.product_key,
+    p.product_name,
+    p.category,
+    p.subcategory, 
+    p.cost
+FROM gold.fact_sales f
+LEFT JOIN gold.dim_products p 
+     ON p.product_key = f.product_key
+WHERE order_date IS NOT NULL -- only consider valid sales dates
+), 
+
+product_aggregation AS (
+
+/*--------------------------------------------------------------------------------------------------------------------
+2) product Aggregations: Summarizes key metrics at the product performers 
+----------------------------------------------------------------------------------------------------------------------*/
+    SELECT 
+        product_key,
+        product_name, 
+        category,
+        subcategory,
+        cost, 
+        DATEDIFF(MONTH, MIN(order_date), MAX(order_date)) AS lifespan,
+        MAX(order_date) AS last_sale_date,
+        COUNT(DISTINCT order_number) AS total_orders, 
+        COUNT(DISTINCT customer_key) AS total_customers, 
+        SUM(sales_amount) AS total_sales, 
+        SUM(quantity) AS total_quantity,
+        ROUND(AVG(CAST(sales_amount AS FLOAT) / NULLIF(quantity, 0)), 1) AS avg_selling_price
+    FROM base_product_query 
+    GROUP BY
+        product_key,
+        product_name, 
+        category,
+        subcategory,
+        cost
+  )
+  
+/*--------------------------------------------------------------------------------------------------------------------
+3) Finale Query: Combines all product results into one output 
+----------------------------------------------------------------------------------------------------------------------*/
+  SELECT 
+    product_key,
+    product_name,
+    category,
+    subcategory,
+    cost,
+    last_sale_date,
+    DATEDIFF(MONTH, last_sale_date, GETDATE()) AS recency_in_month,
+    case
+        WHEN total_sales > 50000 THEN 'High-Performer'
+        WHEN total_sales >= 10000 THEN 'Mid-Range'
+        ELSE 'Low-Performer'
+    END AS product_segment,
+    lifespan,
+    total_orders,
+    total_sales, 
+    total_quantity, 
+    total_customers, 
+    avg_selling_price,
+    -- Average Order Revenue (AOR)
+    CASE
+        WHEN total_orders = 0 THEN 0 
+        ELSE total_sales / total_orders
+    END AS avg_order_revenue, 
+    -- Average Monthly Revenue
+    CASE 
+        WHEN lifespan = 0 THEN total_sales
+        ELSE total_sales / lifespan 
+    END AS avg_monthly_revenu 
+
+FROM product_aggregation 
+
+
+
+
+
+
+--  Source:https://www.youtube.com/watch?v=SSKVgrwhzus                                 
+
 
